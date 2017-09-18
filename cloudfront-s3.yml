@@ -1,124 +1,196 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: >-
-  AWS CloudFormation Sample Template S3_Website_With_CloudFront_Distribution:
-  Sample template showing how to create a website with a custom DNS name, hosted
-  on Amazon S3 and served via Amazone CloudFront. It assumes you already have a
-  Hosted Zone registered with Amazon Route 53. **WARNING** This template creates
-  an Amazon Route 53 DNS record, an S3 bucket and a CloudFront distribution. You
-  will be billed for the AWS resources used if you create a stack from this
-  template.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: 'Network Configuration'
+        Parameters:
+          - RegionName
+          - VpcName
+          - EnableDnsSupport
+          - EnableDnsHostnames
+          - VpcCidrBlock
+          - SubnetName
+          - SubnetCidrBlock
+          - SubnetAvailabilityZone
+      -
+        Label:
+          default: 'Security Configuration'
+        Parameters:
+          - SecurityGroupName
+          - AdministratorIpAddress
+      -
+        Label:
+          default: 'Amazon EC2 Configuration'
+        Parameters:
+          - InstanceName
+          - ImageId
+          - InstanceType
+          - VolumeSize
+          - KeyName
+
 Parameters:
-  HostedZone:
+  RegionName:
     Type: String
-    Description: The DNS name of an existing Amazon Route 53 hosted zone
-    AllowedPattern: '(?!-)[a-zA-Z0-9-.]{1,63}(?<!-)'
-    ConstraintDescription: must be a valid DNS zone name.
-Mappings:
-  Region2S3WebsiteSuffix:
-    us-east-1:
-      Suffix: .s3-website-us-east-1.amazonaws.com
-    us-west-1:
-      Suffix: .s3-website-us-west-1.amazonaws.com
-    us-west-2:
-      Suffix: .s3-website-us-west-2.amazonaws.com
-    eu-west-1:
-      Suffix: .s3-website-eu-west-1.amazonaws.com
-    eu-west-2:
-      Suffix: .s3-website-eu-west-2.amazonaws.com
-    ap-northeast-1:
-      Suffix: .s3-website-ap-northeast-1.amazonaws.com
-    ap-northeast-2:
-      Suffix: .s3-website-ap-northeast-2.amazonaws.com
-    ap-southeast-1:
-      Suffix: .s3-website-ap-southeast-1.amazonaws.com
-    ap-southeast-2:
-      Suffix: .s3-website-ap-southeast-2.amazonaws.com
-    ap-south-1:
-      Suffix: .s3-website-ap-south-1.amazonaws.com
-    us-east-2:
-      Suffix: .s3-website-us-east-2.amazonaws.com
-    ca-central-1:
-      Suffix: .s3-website-ca-central-1.amazonaws.com
-    sa-east-1:
-      Suffix: .s3-website-sa-east-1.amazonaws.com
-    cn-north-1:
-      Suffix: .s3-website.cn-north-1.amazonaws.com.cn
-    eu-central-1:
-      Suffix: .s3-website-eu-central-1.amazonaws.com
+    Default: 'ap-northeast-1'
+  VpcName:
+    Type: String
+    Default: 'my-vpc'
+  EnableDnsSupport:
+    Type: String
+    Default: 'true'
+  EnableDnsHostnames:
+    Type: String
+    Default: 'true'
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+  SubnetName:
+    Type: String
+    Default: 'my-subnet'
+  SubnetCidrBlock:
+    Type: String
+    Default: 10.0.0.0/24
+  SubnetAvailabilityZone:
+    Type: String
+    Default: 'ap-northeast-1a'
+  IamRoleName:
+    Type: String
+    Default: 'my-iam-role'
+  S3BucketName:
+    Type: String
+    Default: 'my-bucket'
+  InstanceName:
+    Type: String
+    Default: 'my-instance'
+  ImageId:
+    Type: String
+    Default: 'ami-4af5022c' # amazon linux
+  InstanceType:
+    Type: String
+    Default: 't2.micro'
+  VolumeSize:
+    Type: Number
+    Default: 8
+  KeyName:
+    Type: String
+    Default: 'my-instance-key'
+  SecurityGroupName:
+    Type: String
+    Default: 'my-security-group'
+  AdministratorIpAddress:
+    Type: String
+    Default: '116.94.0.124/32'
+
 Resources:
-  S3BucketForWebsiteContent:
+  # Networking
+  Vpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock:
+        Ref: VpcCidrBlock
+      EnableDnsSupport:
+        Ref: EnableDnsSupport
+      EnableDnsHostnames:
+        Ref: EnableDnsHostnames
+      InstanceTenancy: 'default'
+      Tags:
+        - Key: 'Name'
+          Value:
+            Ref: VpcName
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      CidrBlock:
+        Ref: SubnetCidrBlock
+      AvailabilityZone:
+        Ref: SubnetAvailabilityZone
+      Tags:
+      - Key: Name
+        Value:
+          Ref: SubnetName
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: Subnet
+      RouteTableId:
+        Ref: RouteTable
+  GatewayToInternet:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: 'Name'
+        Value: 'internet-gateway'
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: Vpc
+      InternetGatewayId:
+        Ref: GatewayToInternet
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: Vpc
+      Tags:
+      - Key: 'Name'
+        Value: 'vpc-route-table'
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId:
+        Ref: RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: GatewayToInternet
+  # Security
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'allow administrator ip address.'
+      VpcId:
+        Ref: Vpc
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: AdministratorIpAddress
+        IpProtocol: '-1'
+      SecurityGroupEgress:
+      - CidrIp:
+          Ref: VpcCidrBlock
+        IpProtocol: '-1'
+  # Computing
+  EC2Instance:
+      Type: 'AWS::EC2::Instance'
+      Properties:
+        InstanceType:
+          Ref: InstanceType
+        ImageId:
+          Ref: ImageId
+        KeyName:
+          Ref: KeyName
+        BlockDeviceMappings:
+          - DeviceName: '/dev/xvda'
+            Ebs:
+              VolumeType: 'gp2'
+              DeleteOnTermination: 'true'
+              VolumeSize:
+                Ref: VolumeSize
+        SubnetId:
+          Ref: Subnet
+        SecurityGroupIds:
+        -
+          Ref: SecurityGroup
+  S3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
       AccessControl: PublicRead
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: error.html
-  WebsiteCDN:
-    Type: 'AWS::CloudFront::Distribution'
-    Properties:
-      DistributionConfig:
-        Comment: CDN for S3-backed website
-        Aliases:
-          - !Join
-            - ''
-            - - !Ref 'AWS::StackName'
-              - !Ref 'AWS::AccountId'
-              - .
-              - !Ref 'AWS::Region'
-              - .
-              - !Ref HostedZone
-        Enabled: 'true'
-        DefaultCacheBehavior:
-          ForwardedValues:
-            QueryString: 'true'
-          TargetOriginId: only-origin
-          ViewerProtocolPolicy: allow-all
-        DefaultRootObject: index.html
-        Origins:
-          - CustomOriginConfig:
-              HTTPPort: '80'
-              HTTPSPort: '443'
-              OriginProtocolPolicy: http-only
-            DomainName: !Join
-              - ''
-              - - !Ref S3BucketForWebsiteContent
-                - !FindInMap
-                  - Region2S3WebsiteSuffix
-                  - !Ref 'AWS::Region'
-                  - Suffix
-            Id: only-origin
-  WebsiteDNSName:
-    Type: 'AWS::Route53::RecordSet'
-    Properties:
-      HostedZoneName: !Join
-        - ''
-        - - !Ref HostedZone
-          - .
-      Comment: CNAME redirect custom name to CloudFront distribution
-      Name: !Join
-        - ''
-        - - !Ref 'AWS::StackName'
-          - !Ref 'AWS::AccountId'
-          - .
-          - !Ref 'AWS::Region'
-          - .
-          - !Ref HostedZone
-      Type: CNAME
-      TTL: '900'
-      ResourceRecords:
-        - !Join
-          - ''
-          - - 'http://'
-            - !GetAtt
-              - WebsiteCDN
-              - DomainName
-Outputs:
-  WebsiteURL:
-    Value: !Join
-      - ''
-      - - 'http://'
-        - !Ref WebsiteDNSName
-    Description: The URL of the newly created website
-  BucketName:
-    Value: !Ref S3BucketForWebsiteContent
-    Description: Name of S3 bucket to hold website content
