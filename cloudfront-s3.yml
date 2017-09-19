@@ -109,6 +109,7 @@ Resources:
         Ref: SubnetCidrBlock
       AvailabilityZone:
         Ref: SubnetAvailabilityZone
+      MapPublicIpOnLaunch: 'true'
       Tags:
       - Key: Name
         Value:
@@ -158,13 +159,19 @@ Resources:
       VpcId:
         Ref: Vpc
       SecurityGroupIngress:
-      - CidrIp:
+      -
+        IpProtocol: '-1'
+        FromPort: "-1"
+        ToPort: "-1"
+        CidrIp:
           Ref: AdministratorIpAddress
-        IpProtocol: '-1'
       SecurityGroupEgress:
-      - CidrIp:
-          Ref: VpcCidrBlock
-        IpProtocol: '-1'
+      -
+        IpProtocol: "-1"
+        FromPort: "-1"
+        ToPort: "-1"
+        CidrIp: "0.0.0.0/0"
+
   # Computing
   EC2Instance:
       Type: 'AWS::EC2::Instance'
@@ -187,6 +194,10 @@ Resources:
         SecurityGroupIds:
         -
           Ref: SecurityGroup
+        Tags:
+        - Key: 'Name'
+          Value:
+            Ref: InstanceName
   S3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
