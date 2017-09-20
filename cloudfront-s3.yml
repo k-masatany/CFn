@@ -67,7 +67,7 @@ Parameters:
     Default: 'my-instance'
   ImageId:
     Type: String
-    Default: 'ami-4af5022c' # amazon linux
+    Default: 'ami-ea4eae8c' # Ubuntu LTS
   InstanceType:
     Type: String
     Default: 't2.micro'
